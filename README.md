@@ -2,7 +2,7 @@
 
 A production-style **Retrieval-Augmented Generation (RAG)** pipeline that lets you chat with your own documents. Upload any PDF and ask it questions — the AI retrieves the most relevant passages and generates accurate, grounded answers.
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
@@ -59,7 +59,7 @@ python ingest.py
 streamlit run app.py
 ```
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 rag-knowledge-chatbot/
