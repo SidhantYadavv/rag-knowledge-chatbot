@@ -1,4 +1,4 @@
-# 🧠 RAG Knowledge Chatbot
+#  RAG Knowledge Chatbot
 
 A production-style **Retrieval-Augmented Generation (RAG)** pipeline that lets you chat with your own documents. Upload any PDF and ask it questions — the AI retrieves the most relevant passages and generates accurate, grounded answers.
 
@@ -12,7 +12,7 @@ A production-style **Retrieval-Augmented Generation (RAG)** pipeline that lets y
 | UI | Streamlit |
 | Language | Python 3.11+ |
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 PDF Documents → Chunking → Embeddings → ChromaDB
@@ -20,7 +20,7 @@ PDF Documents → Chunking → Embeddings → ChromaDB
 User Question → Embed Question → Retrieve Top-K Chunks → Gemini LLM → Answer
 ```
 
-## 🚀 Getting Started
+## Getting Started
 
 ### 1. Clone the repo
 ```bash
