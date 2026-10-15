@@ -1,7 +1,9 @@
-import streamlit as st
+import html
 import os
+import streamlit as st
+from config import CHAT_MODEL, get_vectorstore
+from ingest import ingest_uploaded_file, list_indexed_sources
 from rag_pipeline import build_qa_chain
-from ingest import ingest_uploaded_file
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -108,75 +110,16 @@ html, body, [data-testid="stAppViewContainer"] {
     margin: 0;
 }
 
-/* ── Suggestion chips ── */
-.chip-row {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    justify-content: center;
-    margin-bottom: 32px;
-}
-.chip {
-    background: rgba(99,102,241,0.1);
-    border: 1px solid rgba(99,102,241,0.25);
-    border-radius: 9999px;
-    padding: 6px 16px;
-    font-size: 0.82rem;
-    color: #a78bfa;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-.chip:hover {
-    background: rgba(99,102,241,0.25);
-    border-color: rgba(99,102,241,0.5);
-}
-
 /* ── Chat messages ── */
-.msg-container { max-width: 780px; margin: 0 auto; }
-
-.msg-user {
-    display: flex;
-    justify-content: flex-end;
-    margin: 12px 0;
-}
-.msg-user .bubble {
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
-    color: #fff;
-    border-radius: 18px 18px 4px 18px;
-    padding: 12px 18px;
-    max-width: 72%;
-    font-size: 0.92rem;
-    line-height: 1.55;
-    box-shadow: 0 4px 20px rgba(99,102,241,0.3);
-}
-
-.msg-assistant {
-    display: flex;
-    justify-content: flex-start;
-    align-items: flex-start;
-    gap: 10px;
-    margin: 12px 0;
-}
-.msg-assistant .avatar {
-    width: 32px; height: 32px;
-    background: linear-gradient(135deg, #1e1b4b, #312e81);
-    border: 1px solid rgba(99,102,241,0.3);
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 0.9rem;
-    flex-shrink: 0;
-    padding-top: 4px;
-}
-.msg-assistant .bubble {
-    background: rgba(255,255,255,0.04);
+[data-testid="stChatMessage"] {
+    max-width: 780px;
+    margin: 0 auto 12px auto;
+    background: rgba(255,255,255,0.04) !important;
     border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 4px 18px 18px 18px;
+    border-radius: 18px;
     padding: 12px 18px;
-    max-width: 72%;
     font-size: 0.92rem;
     line-height: 1.6;
-    color: #e2e8f0;
-    backdrop-filter: blur(10px);
 }
 
 /* ── Source tag ── */
@@ -264,15 +207,29 @@ hr { border-color: rgba(255,255,255,0.06) !important; }
 </style>
 """, unsafe_allow_html=True)
 
+# ── Resources ─────────────────────────────────────────────────────────────────
+if not os.getenv("GOOGLE_API_KEY"):
+    st.error("GOOGLE_API_KEY is not set. Add it to a `.env` file in the project root and restart the app.")
+    st.stop()
+
+
+@st.cache_resource
+def get_store():
+    return get_vectorstore()
+
+
+@st.cache_resource
+def get_chain():
+    return build_qa_chain(get_store())
+
+
+vectorstore = get_store()
+
 # ── Session state ─────────────────────────────────────────────────────────────
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "indexed_docs" not in st.session_state:
-    st.session_state.indexed_docs = []
-if "qa_chain" not in st.session_state:
-    st.session_state.qa_chain = None
-if "chain_ready" not in st.session_state:
-    st.session_state.chain_ready = False
+if "processed_uploads" not in st.session_state:
+    st.session_state.processed_uploads = set()
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -295,24 +252,28 @@ with st.sidebar:
         label_visibility="collapsed",
     )
 
-    if uploaded_files:
-        new_files = [f for f in uploaded_files if f.name not in st.session_state.indexed_docs]
-        if new_files:
-            with st.spinner(f"Indexing {len(new_files)} file(s)..."):
-                for f in new_files:
-                    chunks = ingest_uploaded_file(f)
-                    st.session_state.indexed_docs.append(f.name)
-                # Rebuild chain with fresh vectorstore
-                st.session_state.qa_chain = build_qa_chain()
-                st.session_state.chain_ready = True
-            st.success(f"✅ {len(new_files)} doc(s) indexed!")
+    # The uploader keeps its files across reruns, so only index each upload once
+    new_files = [f for f in uploaded_files or [] if f.file_id not in st.session_state.processed_uploads]
+    if new_files:
+        with st.spinner(f"Indexing {len(new_files)} file(s)..."):
+            for f in new_files:
+                try:
+                    chunks = ingest_uploaded_file(vectorstore, f)
+                except Exception as e:
+                    st.error(f"Failed to index {f.name}: {e}")
+                    continue
+                st.session_state.processed_uploads.add(f.file_id)
+                if chunks == 0:
+                    st.warning(f"No extractable text in {f.name} (scanned PDF?)")
+        st.success(f"✅ {len(new_files)} doc(s) processed")
 
-    # ── Indexed docs list ──
-    if st.session_state.indexed_docs:
+    # ── Indexed docs list (read from the vector store, so it survives refreshes) ──
+    indexed_docs = list_indexed_sources(vectorstore)
+    if indexed_docs:
         st.markdown('<div class="sidebar-label" style="margin-top:20px;">📄 Indexed Documents</div>', unsafe_allow_html=True)
-        for doc in st.session_state.indexed_docs:
+        for doc in indexed_docs:
             name = doc[:28] + "…" if len(doc) > 30 else doc
-            st.markdown(f'<div class="doc-badge"><span class="dot">●</span>{name}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="doc-badge"><span class="dot">●</span>{html.escape(name)}</div>', unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -323,31 +284,14 @@ with st.sidebar:
 
     # ── About ──
     st.markdown('<div class="sidebar-label" style="margin-top:16px;">ℹ️ About</div>', unsafe_allow_html=True)
-    st.markdown("""
+    st.markdown(f"""
     <div style="font-size:0.78rem; color:#475569; line-height:1.6;">
     Upload any PDF and ask questions about it.
-    Powered by <span style="color:#a78bfa;">Gemini 1.5 Flash</span> +
+    Powered by <span style="color:#a78bfa;">{html.escape(CHAT_MODEL)}</span> +
     <span style="color:#60a5fa;">ChromaDB</span> for
     grounded, citation-backed answers.
     </div>
     """, unsafe_allow_html=True)
-
-# ── Load chain on startup (pre-indexed docs) ──────────────────────────────────
-@st.cache_resource
-def load_default_chain():
-    """Load chain from existing chroma_db if it already has data."""
-    try:
-        chain = build_qa_chain()
-        # Quick check: try to get collection count
-        return chain
-    except Exception:
-        return None
-
-if not st.session_state.chain_ready:
-    chain = load_default_chain()
-    if chain is not None:
-        st.session_state.qa_chain = chain
-        st.session_state.chain_ready = True
 
 # ── Hero header ───────────────────────────────────────────────────────────────
 st.markdown("""
@@ -376,67 +320,56 @@ if not st.session_state.messages:
 st.markdown("---")
 
 # ── Chat history ──────────────────────────────────────────────────────────────
-chat_container = st.container()
+AVATARS = {"user": "🧑", "assistant": "🤖"}
 
-with chat_container:
-    if not st.session_state.messages:
-        st.markdown("""
-        <div class="empty-state">
-            <div class="icon">💬</div>
-            <p>Upload a PDF in the sidebar, then ask me anything about it.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        for msg in st.session_state.messages:
-            if msg["role"] == "user":
-                st.markdown(f"""
-                <div class="msg-user">
-                    <div class="bubble">{msg["content"]}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                sources_html = ""
-                if msg.get("sources"):
-                    for src in msg["sources"]:
-                        src_short = os.path.basename(src)
-                        sources_html += f'<span class="source-tag">📄 {src_short}</span>'
-                st.markdown(f"""
-                <div class="msg-assistant">
-                    <div class="avatar">🤖</div>
-                    <div class="bubble">
-                        {msg["content"]}
-                        <div>{sources_html}</div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+
+def render_message(msg):
+    with st.chat_message(msg["role"], avatar=AVATARS[msg["role"]]):
+        st.markdown(msg["content"])
+        if msg.get("sources"):
+            tags = "".join(f'<span class="source-tag">📄 {html.escape(src)}</span>' for src in msg["sources"])
+            st.markdown(tags, unsafe_allow_html=True)
+
+
+if not st.session_state.messages:
+    st.markdown("""
+    <div class="empty-state">
+        <div class="icon">💬</div>
+        <p>Upload a PDF in the sidebar, then ask me anything about it.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+for msg in st.session_state.messages:
+    render_message(msg)
 
 # ── Chat input ────────────────────────────────────────────────────────────────
 if question := st.chat_input("Ask a question about your documents…"):
-    st.session_state.messages.append({"role": "user", "content": question})
+    msg = {"role": "user", "content": question}
+    st.session_state.messages.append(msg)
+    render_message(msg)
 
-    if not st.session_state.chain_ready or st.session_state.qa_chain is None:
-        st.session_state.messages.append({
-            "role": "assistant",
+
+def answer(question: str) -> dict:
+    if not indexed_docs:
+        return {
             "content": "⚠️ No documents indexed yet. Please upload a PDF using the sidebar first.",
             "sources": [],
-        })
-        st.rerun()
+        }
+    try:
+        result = get_chain().invoke(question)
+    except Exception as e:
+        return {"content": f"❌ An error occurred: {e}", "sources": []}
+    # Unique source names in retrieval-rank order
+    sources = list(dict.fromkeys(
+        os.path.basename(doc.metadata.get("source", "Unknown")) for doc in result["source_documents"]
+    ))
+    return {"content": result["answer"], "sources": sources}
 
+
+# Answer the latest question, whether it came from the input box or a suggestion chip
+messages = st.session_state.messages
+if messages and messages[-1]["role"] == "user":
     with st.spinner("Thinking…"):
-        try:
-            result = st.session_state.qa_chain({"query": question})
-            answer = result["result"]
-            sources = list(set(
-                doc.metadata.get("source", "Unknown")
-                for doc in result.get("source_documents", [])
-            ))
-        except Exception as e:
-            answer = f"❌ An error occurred: {str(e)}"
-            sources = []
-
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": answer,
-        "sources": sources,
-    })
-    st.rerun()
+        reply = {"role": "assistant", **answer(messages[-1]["content"])}
+    messages.append(reply)
+    render_message(reply)

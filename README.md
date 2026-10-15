@@ -1,6 +1,6 @@
 # RAG Knowledge Chatbot: Production-Style Document Intelligence
 
-A Retrieval-Augmented Generation (RAG) pipeline designed to transform static PDF documents into interactive knowledge bases. This system leverages Google Gemini 1.5 Flash and LangChain to provide accurate, grounded, and context-aware responses to user queries based on private document sets.
+A Retrieval-Augmented Generation (RAG) pipeline designed to transform static PDF documents into interactive knowledge bases. This system leverages Google Gemini (default `gemini-3.8-flash`) and LangChain to provide accurate, grounded, and context-aware responses to user queries based on private document sets.
 
 ---
 
@@ -18,8 +18,8 @@ A Retrieval-Augmented Generation (RAG) pipeline designed to transform static PDF
 
 | Component | Technology | Role |
 | :--- | :--- | :--- |
-| **LLM** | Google Gemini 1.5 Flash | Core reasoning and response generation |
-| **Embeddings** | Google Embedding-001 | Conversion of text into high-dimensional vectors |
+| **LLM** | Google Gemini 3.8 Flash (configurable) | Core reasoning and response generation |
+| **Embeddings** | Google gemini-embedding-001 | Conversion of text into high-dimensional vectors |
 | **Orchestration** | LangChain | Management of data flow between retrieval and generation |
 | **Vector Database** | ChromaDB | High-performance storage and retrieval of embeddings |
 | **Frontend** | Streamlit | Deployment of the interactive web application |
@@ -41,7 +41,7 @@ The pipeline follows a Retrieval-Augmented Generation pattern, divided into two 
 1. **Query Processing**: Converting the user's question into a vector embedding.
 2. **Similarity Search**: Identifying the most relevant text chunks within ChromaDB.
 3. **Context Construction**: Aggregating retrieved passages into a coherent context for the LLM.
-4. **Response Generation**: Prompting Gemini 1.5 Flash to answer the question using only the provided context.
+4. **Response Generation**: Prompting Gemini to answer the question using only the provided context.
 
 ---
 
@@ -49,7 +49,7 @@ The pipeline follows a Retrieval-Augmented Generation pattern, divided into two 
 
 ### Prerequisites
 - Python 3.11 or higher
-- A Google Cloud Project with the Generative AI API enabled
+- A Gemini API key from Google AI Studio
 
 ### 1. Installation
 ```bash
@@ -69,11 +69,13 @@ pip install -r requirements.txt
 Create a `.env` file in the root directory and add your Google API key:
 ```env
 GOOGLE_API_KEY=your_gemini_api_key_here
+# Optional: override the chat model (defaults to gemini-3.8-flash)
+# GEMINI_MODEL=gemini-3.5-flash-lite
 ```
 API keys can be obtained from the Google AI Studio.
 
 ### 3. Populating the Knowledge Base
-Place PDF files in the `docs/` folder and execute the ingestion script:
+Either upload PDFs from the app's sidebar, or place them in the `docs/` folder and run the ingestion script (re-running it is safe; files are re-indexed, not duplicated):
 ```bash
 python ingest.py
 ```
@@ -89,6 +91,7 @@ streamlit run app.py
 
 - `app.py`: The entry point for the Streamlit application; manages UI state and user interaction.
 - `rag_pipeline.py`: Implements the LangChain retrieval chain logic, including prompt templates and LLM configuration.
+- `config.py`: Shared settings (model names, paths) and the vector store factory.
 - `ingest.py`: Handles PDF processing, text splitting, and vector database population.
 - `docs/`: Storage directory for source PDF documents.
 - `chroma_db/`: Local directory for the persisted vector database.
