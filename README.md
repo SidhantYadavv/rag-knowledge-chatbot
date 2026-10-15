@@ -51,6 +51,12 @@ The pipeline follows a Retrieval-Augmented Generation pattern, divided into two 
 - Python 3.11 or higher
 - A Gemini API key from Google AI Studio
 
+### Quick Start
+```bash
+cp .env.example .env   # then add your GOOGLE_API_KEY
+npm run dev            # creates .venv, installs dependencies on first run, starts the app
+```
+
 ### 1. Installation
 ```bash
 # Clone the repository
